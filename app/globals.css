@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .primary {
+      @apply bg-blue-700 text-white p-4 rounded-lg absolute bottom-10 right-10
+  }
+  .primary:hover {
+      @apply bg-red-800
+  }
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+html,
+body,
+#__next {
+  height: 100vh; /* Full viewport height */
+  width: 100vw;  /* Full viewport width */
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Optional: Prevent scrolling if not needed */
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.esri-zoom .esri-widget--button.sebMap{
+  margin-bottom: 2px;
+  background-color: #004075;
+  opacity: 1;
+}
+.esri-widget--button.sebMap {
+  --calcite-icon-color: rgb(243, 255, 6);
+  background-color: rgb(30, 0, 255);
+}
+
+
+.esri-widget--button.sebMap:hover {
+  --calcite-icon-color: rgb(25, 9, 244);
+  --calcite-color-foreground-2: rgb(230, 246, 5);
+}
+
+
+.sebMap[title="Zoom in"]{
+  border-radius: 50px;
+  margin:4px
+}
+.sebMap[title="Zoom out"]{
+  border-radius: 50px;
+  margin:4px
+}
+
+.esri-component.esri-zoom.esri-widget{
+  background-color: rgba(0,0,0,0);
+  box-shadow:none
+}
