@@ -9,11 +9,13 @@ import SimpleFillSymbol from "@arcgis/core/symbols/SimpleFillSymbol";
 import SimpleLineSymbol from "@arcgis/core/symbols/SimpleLineSymbol";
 import TileInfo from "@arcgis/core/layers/support/TileInfo"
 import * as rasterFunctionUtils from "@arcgis/core/layers/support/rasterFunctionUtils.js";
-import * as geometryEngine from "@arcgis/core/geometry/geometryEngine.js";
+import * as unionOperator from "@arcgis/core/geometry/operators/unionOperator.js";
+import * as bufferOperator from "@arcgis/core/geometry/operators/bufferOperator.js";
 import { CalciteSlider } from "@esri/calcite-components-react";
 import "@esri/calcite-components/dist/components/calcite-slider";
 import "@esri/calcite-components/dist/calcite/calcite.css";
 import Query from "@arcgis/core/rest/support/Query";
+
 // -------- typing --------
 type RgbaArray = [number, number, number, number];
 
@@ -31,6 +33,23 @@ function rendering(fill_rgbaArray: RgbaArray, width:number, line_rgbaArray: Rgba
       })
   })
 }
+function createCustomAnalysis(
+  minValue: number,
+  maxValue: number,
+  geometry: __esri.Geometry
+): __esri.RasterFunctionProperties {
+  const clipper = rasterFunctionUtils.clip({
+    geometry: geometry as __esri.Extent,
+    keepOutside: false,
+  });
+
+  return rasterFunctionUtils.mask({
+    includedRanges: [[minValue, maxValue]],
+    noDataValues: [[-9999]],
+    noDataInterpretation: "match-any",
+    raster: clipper,
+  });
+}
 // ________ Functions ________
 // -------- Main --------
 const MapRasterElevation = () => {
@@ -38,30 +57,10 @@ const mapRef = useRef<HTMLDivElement | null>(null);
 const viewRef = useRef<__esri.MapView | null>(null);
 const [sliderMinValue, setSliderMinValue] = useState(0);
 const [sliderMaxValue, setSliderMaxValue] = useState(2);
- 
-useEffect(() => {
-
-const createCustomAnalysis = (
-  minValue: number,
-  maxValue: number,
-  geometry: __esri.Geometry,
-): __esri.RasterFunctionProperties => {
-  const clipper = rasterFunctionUtils.clip({
-    geometry: geometry as __esri.Extent,
-    keepOutside: false,
-  });
-
-  const elevationMask = rasterFunctionUtils.mask({
-    includedRanges: [[minValue, maxValue]],
-    noDataValues: [[-9999]],
-    noDataInterpretation: "match-any",
-    raster: clipper
-  })
-
-  return elevationMask
-};
-
-const boundary_LCC = new FeatureLayer({
+const [polygon, setPolygon] = useState<__esri.Geometry | null>(null);
+const [init, setInit] = useState(false);
+const [rastLayer, setRastLayer] = useState<ImageryTileLayer | null>(null);
+   const boundary_LCC = new FeatureLayer({
   url: 'https://services.arcgis.com/3vStCH7NDoBOZ5zn/ArcGIS/rest/services/Woongoolba_flood_mitigation_catchment_area/FeatureServer',
   outFields: ['*'],
   title: 'Boundary',
@@ -74,13 +73,31 @@ const boundary_LCC2 = new FeatureLayer({
   title: 'Boundary',
   renderer:rendering([255, 128, 0, 0], 3, [255, 255, 255, 0.85]),
 })
-
+const fl_poly=boundary_LCC2.queryFeatures({
+  where:"1=1",
+  returnGeometry:true
+}).then((result) => {
+  const polygons = result.features.map(f => f.geometry).filter(geometry => geometry !== null && geometry !== undefined);
+  const mergedPolygon = unionOperator.executeMany(polygons)
+   const buffered = bufferOperator.execute(mergedPolygon as __esri.Polygon,100,{unit: "meters"})
+  return buffered;
+})
 const rast_lyr = new ImageryTileLayer({
                     url: "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Elevation/QldDem/ImageServer",
-                    minScale: 1000000,
-                    maxScale: 0,   
+                    maxScale: 0,
                     opacity: 0.8, 
                   });
+
+useEffect(() => {
+  if (rastLayer && init && polygon) {
+    rastLayer.rasterFunction = createCustomAnalysis(sliderMinValue, sliderMaxValue, polygon as __esri.Geometry);
+    const currentOpacity = rastLayer.opacity;
+    rastLayer.opacity = currentOpacity - 0.0001; // nudge
+    rastLayer.opacity = 0.8;
+}
+}, [sliderMinValue, sliderMaxValue]);
+
+useEffect(() => {
 
     if (mapRef.current) {
         (async () => {
@@ -101,11 +118,14 @@ const rast_lyr = new ImageryTileLayer({
                 },
             })
 
-            boundary_LCC.when(() => {
+            boundary_LCC.when(async() => {
               // mapView.constraints.geometry=boundary_LCC.fullExtent
               map.add(rast_lyr,-2);
-
-              rast_lyr.rasterFunction = createCustomAnalysis(sliderMinValue, sliderMaxValue,boundary_LCC.fullExtent as __esri.Geometry);
+              const polygon = await fl_poly;
+              setPolygon(polygon as __esri.Geometry);
+              setRastLayer(rast_lyr);
+              rast_lyr.rasterFunction = createCustomAnalysis(sliderMinValue, sliderMaxValue,polygon as __esri.Geometry);
+              setInit(true);
             })
 
             viewRef.current = mapView;
@@ -122,12 +142,10 @@ const rast_lyr = new ImageryTileLayer({
 const elevationSlider = document.getElementById("elevationSlider") as HTMLCalciteSliderElement | null;
 if (elevationSlider) {
   elevationSlider.addEventListener("calciteSliderChange", (event: Event) => {
-    const target = event.target as HTMLCalciteSliderElement;
-    const minValue = target.minValue;
-    const maxValue = target.maxValue;
-    // console.log("Slider changed:", { minValue, maxValue });
-    // Assuming createCustomAnalysis is a function you've defined elsewhere
-    rast_lyr.rasterFunction = createCustomAnalysis(minValue, maxValue,boundary_LCC.fullExtent as __esri.Geometry);
+  const target = event.target as HTMLCalciteSliderElement;
+   setSliderMinValue(target.minValue)
+   setSliderMaxValue(target.maxValue)
+    // rast_lyr.rasterFunction = createCustomAnalysis(target.minValue, target.maxValue,polygon as __esri.Geometry);
   });
 } else {
   console.warn("Elevation slider element not found.");
